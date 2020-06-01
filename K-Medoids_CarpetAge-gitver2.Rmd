@@ -1,0 +1,342 @@
+---
+title: "Application of K-Medoids Partitioning to Antique Carpets Dataset"
+author: "Abie A"
+date: "31/05/2020"
+output: github_document
+---
+
+Objective: apply K-medoids - PAM to carpet age dataset
+
+Let's load the required libraries.
+
+```{r}
+library(factoextra)
+library(clustertend)
+library(NbClust)
+library(fpc)
+library(dplyr)
+library(cluster)
+library(clValid)
+```
+
+
+Set seed to ensure reproducibility:
+
+```{r}
+set.seed(1998) #for reproducibility
+```
+
+Next we'll import the data:
+
+```{r}
+carpet_df <- read.csv("carpet_age.csv")
+str(carpet_df)
+head(carpet_df)
+```
+
+
+PRE-WORK | DATA CLEANSING, SCALE, ETC
+
+Check for missing data:
+
+```{r}
+apply(is.na(carpet_df), 2, sum)
+```
+
+There are 2 observations with missing data for age, this is less than 10% of our data so we will remove the records and proceed to scale.
+
+```{r}
+carpet_df <- carpet_df[!(is.na(carpet_df$age)),] #delete rows where age = NA
+apply(is.na(carpet_df),2,sum) #confirm that there are no missing data left
+carpet.scaled <- scale(carpet_df[,-1])
+
+head(carpet.scaled)
+```
+
+
+Step 1: Assess Clustering Tendency
+
+
+```{r}
+par(mfrow = c(2,2))
+```
+
+
+Visualize data to assess for cluster tendency. Plot data set, we need to do pca first because we have > 2 vars.
+
+```{r}
+fviz_pca_ind(prcomp(carpet.scaled), title = "PCA - Carpet Age Data",
+             habillage = carpet_df$sample_id,palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+```
+
+Statistical method of assessing clustering tendency
+
+We can conduct the Hopkins Statistic test iteratively, using 0.5 as the threshold to reject the alternative hypothesis. That is, if H < 0.5, then it is unlikely that D has statistically significant clusters. If the value of Hopkins statistic is close to 1, then we can reject the null hypothesis and conclude that the dataset D is significantly a clusterable data.
+
+Using get_clust_tendency, we can conclude that the data is highly clusterable if value is near to 1:
+
+```{r}
+res <- get_clust_tendency(carpet.scaled, n = nrow(carpet.scaled)-1, graph = FALSE)
+res$hopkins_stat
+```
+
+Hopkins stat using get_clust_tendency is 0.8489 so we can conclude that it is highly clusterable.
+
+Another method is using hopkins() function [in clustertend package]. It implements 1- the definition of H.
+
+Let's apply the visual method of assessing clustering tendency:
+
+```{r}
+fviz_dist(dist(carpet.scaled), show_labels = FALSE)+
+  labs(title = "Carpet Age Data")
+```
+
+
+Here we are checking for big squares along the 45 degree line to be able to say that the data is clusterable. The dissimilarity visualization above supports the hopkins finding that the carpet data contains cluster structures.
+
+STEP 2: DETERMINE OPTIMAL No. OF CLUSTERS
+
+Direct Methods: Elbow and silhouette methods
+
+Elbow method | The location of a bend (knee) in the plot is generally considered as an indicator of the appropriate number of clusters; The Elbow method looks at the total WSS as a function of the number of clusters: One should choose a number of clusters so that adding another cluster doesn’t improve much better the total WSS.
+
+```{r}
+fviz_nbclust(carpet.scaled, cluster::pam, method = "wss")+
+   labs(subtitle = "Elbow method | Carpet Age Data set") +
+  theme_classic()+
+  geom_vline(xintercept = 2, linetype = 2)
+
+```
+
+The elbow method finds k=2 clusters as optimal.
+
+Average Silhouette method | measures the quality of a clustering. That is, it determines how well each object lies within its cluster. A high average silhouette width indicates a good clustering. Average silhouette method computes the average silhouette of observations for different values of k. The optimal number of clusters k is the one that maximize the average silhouette over a range of possible values for k (Kaufman and Rousseeuw, 1990). The location of the maximum is considered as the appropriate number of clusters.
+
+```{r}
+fviz_nbclust(carpet.scaled, pam, method = "silhouette") +
+ labs(subtitle = "Average silhouette method | Carpet Age Data set")
+
+```
+
+The silhouette method finds k=2 as optimal.
+
+Statistical Method: Gap stat
+
+The gap statistic compares the total within intra-cluster variation for different values of k with their expected values under null reference distribution of the data.
+
+```{r}
+fviz_nbclust(carpet.scaled, cluster::pam, method = "gap_stat", nboot = 500)+
+  labs(subtitle = "Gap statistic method | Carpet Age Data set")
+```
+
+The gap stat finds k=2 as optimal.
+
+Our checks indicate that K=2 is the optimal number of clusters for K-Medoids.
+
+STEP 3: PARTITIONING CLUSTERING
+
+pam has 2 options for metric:manhattan and euclidean
+K-medoids: less prone to outliers
+
+LEt's run pam using the manhanttan distance:
+
+```{r}
+pam.res <- pam(carpet.scaled, 2, metric = "manhattan", stand = FALSE)
+
+pam.res$clusinfo
+```
+
+Now, let's try using the euclidean distance:
+
+```{r}
+pam.res2 <- pam(carpet.scaled, 2, metric = "euclidean", stand = FALSE)
+
+pam.res2$clusinfo
+```
+
+We can see that PAM using Euclidean or manhattan distance both resulted in clusters of size 14 and 9.
+However, PAM using manhattan distance resulted in clusters that are more separated which is more desirable.
+
+Let's add the cluster information to original df:
+
+```{r}
+
+carpet_cluster2 <- cbind(carpet_df, cluster = pam.res2$cluster)
+head(carpet_cluster2)
+```
+
+We will proceed with pam using manhattan as the manhattan distance is less prone to outliers
+
+Let's display the cluster medoids:
+
+```{r}
+
+pam.res$medoids
+```
+
+Cluster numbers:
+
+```{r}
+pam.res$clustering
+```
+
+Visualize pam:
+
+```{r}
+fviz_cluster(pam.res,
+             #palette = c("#00AFBB", "#FC4E07"), # color palette
+             ellipse.type = "t", # Concentration ellipse
+             repel = TRUE, # Avoid label overplotting (slow)
+             ggtheme = theme_classic(),
+             main = "Cluster Plot of Carpet Age using K-Medoids"
+             
+)
+```
+
+```{r}
+pam2.res <- carpet_df %>%
+  mutate(cluster = pam.res$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+pam2.res$the_summary
+```
+
+
+STEP 4: CLUSTER VALIDATION
+
+Internal validation measures reflect often the compactness, the connectedness and the separation of the cluster partitions.
+
+Silhouette coefficient
+
+The silhouette analysis measures how well an observation is clustered and it estimates the average distance between clusters. The silhouette plot displays a measure of how close each point in one cluster is to points in the neighboring clusters.
+
+If Si (silhouette coefficient) is almost 1, well clustered.
+If Si is near 0, the observation may lie between 2 clusters.
+If Si negative, there is a possibility that the observation is placed in the wrong cluster.
+Observations with a large Si (almost 1) are very well clustered.
+
+
+We will use eclust() to perform pam and then plug it into fvz_silhouette:
+
+```{r}
+pamres.eclust <- eclust(carpet.scaled, "pam", k = 2, graph = FALSE)
+```
+
+Visualize k-medoidsclusters
+
+```{r}
+fviz_cluster(pamres.eclust, geom = "point", ellipse.type = "norm",
+             palette = "jco", ggtheme = theme_minimal())
+```
+
+
+
+Generate the silhouette plot:
+
+```{r}
+fviz_silhouette(pamres.eclust, palette = "jco",
+                ggtheme = theme_classic())
+```
+
+
+The average silhouette width = 0.81.
+
+We shld look for observations with -ve silhouette index as this would indicate that the observation is in the wrong cluster
+Visually, there appears to be no observations with -ve silhouette coeff. Let's verify that.We can find the name of these samples and determine the clusters they are closer (neighbor cluster).
+
+Silhouette width of observation:
+
+```{r}
+sil <- pamres.eclust$silinfo$widths[, 1:3]
+```
+
+
+Objects with negative silhouette
+
+```{r}
+neg_sil_index <- which(sil[, 'sil_width'] < 0)
+sil[neg_sil_index, , drop = FALSE]
+```
+
+We can confirm that there are no observations with -ve silhouette coeff. Based on this, we can say that there are no observations
+assigned to the wrong cluster
+
+
+Dunn Index
+
+If the data set contains compact and well-separated clusters, the diameter of the clusters is expected to be small and the distance between the clusters is expected to be large. Thus, we should see larger values of Dunn Index if the clustering is good.
+
+To find the dunn index:
+```{r}
+
+pam_stats <- cluster.stats(dist(carpet.scaled), pamres.eclust$cluster)
+
+pam_stats$dunn # Dun index
+
+
+```
+
+Display all stats:
+
+```{r}
+pam_stats
+```
+
+STEP 5: CHOOSING THE BEST CLUSTERING ALGORITHM
+
+clValid (Brock et al., 2008), which can be used to compare simultaneously multiple clustering algorithms in a single function call for identifying the best clustering approach and the optimal number of clusters. The clValid package compares clustering algorithms using two cluster validation measures:
+
+1. Internal measures, which uses intrinsic information in the data to assess the quality of the clustering. Internal measures include the connectivity, the silhouette coefficient and the Dunn index
+
+Compute clValid:
+
+```{r}
+clmethods <- c("hierarchical","kmeans","pam")
+intern <- clValid(carpet.scaled, nClust = 2:4,
+                  clMethods = clmethods, validation = "internal")
+```
+
+Summary:
+
+```{r}
+summary(intern)
+```
+
+Using internal measures, hierarchical, kmeans and pam have the same scores for internal measure. For all 3 algorithms, the k=2 is optimal.
+
+
+2. Stability measures - Evaluates the consistency of a clustering result by comparing it with the clusters obtained after each column is removed, one at a time.
+
+Cluster stability measures include:
+  Average proportion of non-overlap (APN)
+  Average distance (AD)
+  Average distance between means (ADM)
+  Figure of merit (FOM)
+  
+Smaller values of APN, AD, ADM and FOM are preferred as it indicates consistent clustering results.
+# The values of APN, ADM and FOM ranges from 0 to 1, with smaller value corresponding
+
+Stability measures
+
+```{r}
+clmethods <- c("hierarchical","kmeans","pam")
+stab <- clValid(carpet.scaled, nClust = 2:4, clMethods = clmethods,
+                validation = "stability")
+
+```
+
+
+Display only optimal Scores
+
+```{r}
+optimalScores(stab)
+```
+
+For the APN and ADM measures, hierarchical clustering with k=2 gives the best score. For AD, PAM with 4 clusters has the best score. 
+For FoM, kmeans with k=4 has the best score.
+
+
+Reference: https://www.datanovia.com/en/blog/cluster-analysis-in-r-practical-guide/
