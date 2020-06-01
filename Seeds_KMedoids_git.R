@@ -1,6 +1,6 @@
-##### DANA 4840 Project
-#### Partitioning-K-Medoids
-###Last update: AA, 29 Mar
+#-----------------------------------------------------------------------------------
+# Partitioning-K-Medoids
+# Last update: AA, 29 Mar
 
 #apply K-medoids - PAM to carpet age dataset
 library(factoextra)
@@ -311,3 +311,4 @@ optimalScores(stab)
 # gives the best score. For AD, PAM with 4 clusters has the best
 # score. For FoM, kmeans with k=4 has the best score
 
+#Reference: https://www.datanovia.com/en/blog/cluster-analysis-in-r-practical-guide/
