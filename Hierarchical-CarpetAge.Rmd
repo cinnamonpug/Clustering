@@ -1,0 +1,178 @@
+---
+title: "Hierarchical Clustering of Carpet Age dataset"
+author: "Abie A"
+date: "04/06/2020"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+Dataset: 	
+Determination of Age of Old Carpets by Chemical Levels
+
+Source: 
+carpet_age.csv
+http://users.stat.ufl.edu/~winner/datasets.html
+
+Description: 
+Age of 23 Old Carpet and Wool samples, and Cysteic Acid, Cystine, Methionine, and Tyrosine. 
+
+Variable Names:
+Sample ID : sample_id
+Age : age
+Cysteic Acid Level: cys_acid
+cystine level: cys
+Methionine Level: met
+Tyrosine Level: tyr
+
+
+OBJECTIVE: Form groupings of different carpets using hierarchical clustering algorithm.
+
+
+
+Load the required libraries:
+
+```{r}
+library(factoextra)
+library(clustertend)
+library(NbClust)
+library(fpc)
+library(tidyverse)
+library(cluster)
+library(clValid)
+```
+
+
+Set seed to ensure reproducibility:
+
+```{r}
+set.seed(1998)
+```
+
+
+Import the dataset:
+
+```{r}
+carpet <- read_csv("carpet_age.csv")
+carpet
+```
+
+
+Check structure:
+
+```{r}
+str(carpet)
+```
+
+```{r}
+summary(carpet)
+```
+
+We can see that there are 2 observations with missing age.
+
+```{r}
+colSums(is.na(carpet))
+```
+
+The 2 observations with missing age value will be removed as this is less than 10% of our data. We will proceed with scaling after removing these observations.
+
+```{r}
+carpet <- carpet %>%
+  drop_na()
+```
+
+Let's check the df for missing values:
+
+```{r}
+summary(carpet)
+```
+
+```{r}
+colSums(is.na(carpet))
+```
+
+We'll proceed to scale the data:
+
+```{r}
+str(carpet)
+head(carpet)
+
+carpet_df <- data.frame(carpet, row.names=1) #use sample_id column as rownames
+carpet_scaled <- carpet_df %>%
+    select(-age)%>% #all columns except age
+    scale()
+carpet_scaled
+```
+
+Hierarchical clustering is suitable for small datasets and outputs a dendrogram that provides a good visualization of the clusters.
+Before we proceed, let's check for clustering tendency in our dataset.This will ensure that our clustering exercise provides meaningful groupings instead of merely random structures. It is worth noting that clustering algorithms always return clusters, whether or not the data actually contains meaningful clusters.
+
+Visual Inspection of the data:
+
+```{r}
+fviz_pca_ind(prcomp(carpet_df[,-1]), title="PCA - Carpet Age dataset",
+  habillage=carpet_df$age, palette="jco",
+  geom="point", ggtheme= theme_classic(),
+  legend="bottom")
+
+```
+
+From the plot, it appears that there are 2 clusters in our dataset.
+
+To properly evaluate the feasibility of cluster analysis on the data set, we'll proceed with the statistical method for assessing clustering tendency. This method uses the Hopkins statistic. Using a threshold of 0.5, we conclude that the dataset is clusterable if the Hopkins stat is > 0.5.
+
+```{r}
+res_hop <- get_clust_tendency(carpet_df[,-1], n = nrow(carpet_df[,-1])-1, graph=FALSE)
+res_hop$hopkins_stat
+```
+
+The hopkins statistic is 0.839 which indicates that our data is highly clusterable.
+
+Another way of assessing clustering tendency is using the visual assessment of cluster tendency (VAT):
+
+```{r}
+fviz_dist(dist(carpet_df[,-1]), show_labels=FALSE) +
+  labs(title="Visual Assessment of Clustering Tendency - Carpet Data")
+
+```
+
+The red blocks indicate high similarity. Here we look at the square shapes around the diagonal. This plot confirms that there are clusters in the data.
+
+
+We'll proceed with the hierarchical clustering.
+
+Let's compute the dissimilarity matrix using the euclidean distance:
+
+```{r}
+carpet_dist <- dist(carpet_scaled, method = "euclidean")
+as.matrix(carpet_dist)[1:5,1:5] #display first 5 rows of distance matrix
+```
+
+We can now use the distance matrix as input to our hclust function:
+
+```{r}
+carpet_hc <- hclust(carpet_dist, method = "average")
+fviz_dend(carpet_hc, cex = 0.5) #visualize the dendrogram
+```
+
+
+We will verify how well our cluster tree reflects our data by computing the cophenetic distance. Next, we compute the correlation between the original distance matrix and the cophenetic distance. Here we are looking at correlation values > 0.75 to indicate that the clustering accurately reflects the groupings in the data. Generally, the average linkage method yields high values of this correlation which is why we used it to perform our clustering.
+
+```{r}
+coph_carpet <- cophenetic(carpet_hc) #compute cophenetic dist
+cor(carpet_dist, coph_carpet) #correlation bet orig dist matrix and the cophenetic dist
+```
+
+The correlation of 0.935 confirms that the dendrogram produced by the hierarchical clustering with average linkage is an accurate representation of the data.
+
+Let's cut the dendrogram into k=2 groups:
+
+```{r}
+fviz_dend(carpet_hc, k =2,
+          cex=0.5,
+          k_colors=c("red", "orange"),
+          color_labels_by_k = TRUE,
+          rect = TRUE,
+          )
+```
+
